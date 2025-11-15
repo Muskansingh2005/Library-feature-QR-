@@ -1,144 +1,99 @@
-/**
- * Book Controller
- * ---------------
- * Contains CRUD operations for Book model and integrates QR code generation.
- */
-
+// [file name]: bookController.js - UPDATED
 import Book from "../models/Book.js";
 import { generateQRCode } from "../utils/qrGenerator.js";
 
-/**
- * @desc Create a new book and generate its QR code.
- * @route POST /api/books
- * @access Public
- *
- * Example Request Body:
- * {
- *   "title": "Python Crash Course",
- *   "author": "Eric Matthes",
- *   "isbn": "9781593279288",
- *   "description": "Hands-on Python intro",
- *   "totalCopies": 5
- * }
- */
-export const createBook = async (req, res, next) => {
+export const addBook = async (req, res) => {
   try {
     const { title, author, isbn, description, totalCopies } = req.body;
 
-    if (!title || !totalCopies)
-      return res
-        .status(400)
-        .json({ message: "Title and totalCopies are required" });
+    // ✅ Enhanced input validation
+    if (typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({
+        message: "Valid title is required",
+      });
+    }
 
-    const book = new Book({
-      title,
-      author,
-      isbn,
-      description,
-      totalCopies,
-      availableCopies: totalCopies,
-    });
+    if (!Number.isInteger(+totalCopies) || +totalCopies < 1) {
+      return res.status(400).json({
+        message: "Total copies must be a positive integer",
+      });
+    }
 
+    // Check for duplicate ISBN
+    if (isbn?.trim()) {
+      const existingBook = await Book.findOne({ isbn: isbn.trim() });
+      if (existingBook) {
+        return res.status(400).json({
+          message: "Book with this ISBN already exists",
+        });
+      }
+    }
+
+    // ✅ Create new book with QR code in single transaction
+    const bookData = {
+      title: title.trim(),
+      author: author?.trim() || "",
+      isbn: isbn?.trim() || "",
+      description: description?.trim() || "",
+      totalCopies: +totalCopies,
+      availableCopies: +totalCopies,
+    };
+
+    // Generate QR code first
+    let qrDataUrl;
+    try {
+      const newBookTemp = new Book(bookData);
+      qrDataUrl = await generateQRCode(newBookTemp._id.toString());
+      bookData.qrData = qrDataUrl;
+    } catch (qrError) {
+      console.error("QR generation failed:", qrError);
+      return res.status(500).json({
+        message: "QR code generation failed",
+        error: qrError.message || String(qrError),
+      });
+    }
+
+    // Save book with QR data
+    const book = new Book(bookData);
     await book.save();
 
-    // Generate QR code based on the book ID
-    const qrDataUrl = await generateQRCode(book._id.toString());
-    book.qrData = qrDataUrl;
-    await book.save();
-
+    // ✅ Success response
     res.status(201).json({
-      message: "Book created successfully",
+      message: "Book created successfully with QR code",
       book,
     });
   } catch (error) {
-    next(error);
-  }
-};
+    console.error("Error adding book:", error);
 
-/**
- * @desc Get all books
- * @route GET /api/books
- * @access Public
- *
- * Example Response:
- * [
- *   {
- *     "_id": "abc123",
- *     "title": "Clean Code",
- *     "author": "Robert Martin",
- *     "qrData": "data:image/png;base64,..."
- *   }
- * ]
- */
-export const getBooks = async (req, res, next) => {
-  try {
-    const books = await Book.find().sort({ createdAt: -1 });
-    res.json(books);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc Get a single book by ID
- * @route GET /api/books/:id
- * @access Public
- */
-export const getBookById = async (req, res, next) => {
-  try {
-    const book = await Book.findById(req.params.id);
-    if (!book) return res.status(404).json({ message: "Book not found" });
-    res.json(book);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc Update book details
- * @route PUT /api/books/:id
- * @access Public
- *
- * Example Request Body:
- * {
- *   "title": "Updated Book",
- *   "author": "New Author",
- *   "regenerateQR": true
- * }
- */
-export const updateBook = async (req, res, next) => {
-  try {
-    const { regenerateQR, ...updates } = req.body;
-
-    const book = await Book.findById(req.params.id);
-    if (!book) return res.status(404).json({ message: "Book not found" });
-
-    Object.assign(book, updates);
-
-    // Regenerate QR only if explicitly requested
-    if (regenerateQR === true) {
-      book.qrData = await generateQRCode(book._id.toString());
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: "Book with this ISBN already exists",
+      });
     }
 
-    await book.save();
-    res.json({ message: "Book updated successfully", book });
-  } catch (error) {
-    next(error);
+    res.status(500).json({
+      message: "Server error while adding book",
+      error: error.message || String(error),
+    });
   }
 };
 
-/**
- * @desc Delete a book
- * @route DELETE /api/books/:id
- * @access Public
- */
-export const deleteBook = async (req, res, next) => {
+// Add getBookById controller
+export const getBookById = async (req, res) => {
   try {
-    const deleted = await Book.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: "Book not found" });
+    const { id } = req.params;
 
-    res.json({ message: "Book deleted successfully" });
+    const book = await Book.findById(id);
+    if (!book) {
+      return res.status(404).json({ message: "Book not found" });
+    }
+
+    res.json(book);
   } catch (error) {
-    next(error);
+    console.error("Get book error:", error);
+    res.status(500).json({
+      message: "Server error while fetching book",
+      error: error.message || String(error),
+    });
   }
 };

@@ -1,7 +1,8 @@
+// [file name]: transactionController.js - UPDATED
 /**
  * Transaction Controller
  * ----------------------
- * Handles book issue and return operations with simple business logic.
+ * Handles book issue and return operations with improved validation.
  */
 
 import Transaction from "../models/Transaction.js";
@@ -12,55 +13,84 @@ import Student from "../models/Student.js";
  * @desc Issue a book to a student
  * @route POST /api/transactions/issue
  * @access Public
- *
- * Example Request:
- * {
- *   "studentId": "6733d0abc...",
- *   "bookId": "6733d0def..."
- * }
- *
- * Behavior:
- * - If book.availableCopies > 0 → issue the book
- * - Else → return 400 error
  */
 export const issueBook = async (req, res, next) => {
   try {
     const { studentId, bookId } = req.body;
 
-    if (!studentId || !bookId)
-      return res
-        .status(400)
-        .json({ message: "studentId and bookId are required" });
+    // ✅ Enhanced validation
+    if (!studentId || !bookId) {
+      return res.status(400).json({
+        message: "studentId and bookId are required",
+      });
+    }
 
-    const student = await Student.findById(studentId);
-    const book = await Book.findById(bookId);
+    // Validate ObjectId format
+    if (
+      !mongoose.Types.ObjectId.isValid(studentId) ||
+      !mongoose.Types.ObjectId.isValid(bookId)
+    ) {
+      return res.status(400).json({
+        message: "Invalid studentId or bookId format",
+      });
+    }
 
-    if (!student || !book)
-      return res.status(404).json({ message: "Student or Book not found" });
+    const [student, book] = await Promise.all([
+      Student.findById(studentId),
+      Book.findById(bookId),
+    ]);
 
-    if (book.availableCopies <= 0)
-      return res.status(400).json({ message: "No copies available to issue" });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    if (!book) {
+      return res.status(404).json({ message: "Book not found" });
+    }
 
-    // Create transaction
-    const transaction = new Transaction({
+    // Check if book is already issued to this student
+    const activeIssue = await Transaction.findOne({
       studentId,
       bookId,
       type: "issue",
     });
 
-    // Decrement available copies
-    book.availableCopies -= 1;
+    if (activeIssue) {
+      return res.status(400).json({
+        message: "Book is already issued to this student",
+      });
+    }
 
-    // Save both
-    await transaction.save();
-    await book.save();
+    if (book.availableCopies <= 0) {
+      return res.status(400).json({
+        message: "No copies available to issue",
+      });
+    }
+
+    // Create transaction and update book in parallel
+    const [transaction] = await Promise.all([
+      new Transaction({
+        studentId,
+        bookId,
+        type: "issue",
+      }).save(),
+      Book.findByIdAndUpdate(
+        bookId,
+        {
+          $inc: { availableCopies: -1 },
+        },
+        { new: true }
+      ),
+    ]);
+
+    const updatedBook = await Book.findById(bookId);
 
     res.status(201).json({
       message: "Book issued successfully",
       transaction,
-      updatedBook: book,
+      updatedBook,
     });
   } catch (error) {
+    console.error("Issue book error:", error);
     next(error);
   }
 };
@@ -69,82 +99,110 @@ export const issueBook = async (req, res, next) => {
  * @desc Return a book
  * @route POST /api/transactions/return
  * @access Public
- *
- * Example Request:
- * {
- *   "studentId": "6733d0abc...",
- *   "bookId": "6733d0def..."
- * }
- *
- * Behavior:
- * - Create transaction type "return"
- * - Increment availableCopies
  */
 export const returnBook = async (req, res, next) => {
   try {
     const { studentId, bookId } = req.body;
 
-    if (!studentId || !bookId)
-      return res
-        .status(400)
-        .json({ message: "studentId and bookId are required" });
-
-    const student = await Student.findById(studentId);
-    const book = await Book.findById(bookId);
-
-    if (!student || !book)
-      return res.status(404).json({ message: "Student or Book not found" });
-
-    // Create transaction
-    const transaction = new Transaction({
-      studentId,
-      bookId,
-      type: "return",
-    });
-
-    // Increment available copies (but not above total)
-    if (book.availableCopies < book.totalCopies) {
-      book.availableCopies += 1;
+    if (!studentId || !bookId) {
+      return res.status(400).json({
+        message: "studentId and bookId are required",
+      });
     }
 
-    await transaction.save();
-    await book.save();
+    // Validate ObjectId format
+    if (
+      !mongoose.Types.ObjectId.isValid(studentId) ||
+      !mongoose.Types.ObjectId.isValid(bookId)
+    ) {
+      return res.status(400).json({
+        message: "Invalid studentId or bookId format",
+      });
+    }
+
+    const [student, book] = await Promise.all([
+      Student.findById(studentId),
+      Book.findById(bookId),
+    ]);
+
+    if (!student || !book) {
+      return res.status(404).json({
+        message: "Student or Book not found",
+      });
+    }
+
+    // Check if book is actually issued to this student
+    const activeIssue = await Transaction.findOne({
+      studentId,
+      bookId,
+      type: "issue",
+    });
+
+    if (!activeIssue) {
+      return res.status(400).json({
+        message: "This book is not issued to the student",
+      });
+    }
+
+    // Create return transaction and update book
+    const [transaction] = await Promise.all([
+      new Transaction({
+        studentId,
+        bookId,
+        type: "return",
+      }).save(),
+      Book.findByIdAndUpdate(
+        bookId,
+        {
+          $inc: { availableCopies: 1 },
+        },
+        { new: true }
+      ),
+    ]);
+
+    const updatedBook = await Book.findById(bookId);
 
     res.status(201).json({
       message: "Book returned successfully",
       transaction,
-      updatedBook: book,
+      updatedBook,
     });
   } catch (error) {
+    console.error("Return book error:", error);
     next(error);
   }
 };
 
 /**
- * @desc Get all transactions
+ * @desc Get all transactions with pagination
  * @route GET /api/transactions
  * @access Public
- *
- * Example Response:
- * [
- *   {
- *     "_id": "tx123",
- *     "studentId": { "name": "Aarav Patel", "rollNo": "BTECH001" },
- *     "bookId": { "title": "Clean Code" },
- *     "type": "issue",
- *     "date": "2025-11-12T10:00:00Z"
- *   }
- * ]
  */
 export const getTransactions = async (req, res, next) => {
   try {
-    const transactions = await Transaction.find()
+    const { page = 1, limit = 50, studentId, bookId } = req.query;
+
+    const filter = {};
+    if (studentId) filter.studentId = studentId;
+    if (bookId) filter.bookId = bookId;
+
+    const transactions = await Transaction.find(filter)
       .populate("studentId", "name rollNo email")
       .populate("bookId", "title author isbn")
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
 
-    res.json(transactions);
+    const total = await Transaction.countDocuments(filter);
+
+    res.json({
+      transactions,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total,
+    });
   } catch (error) {
+    console.error("Get transactions error:", error);
     next(error);
   }
 };

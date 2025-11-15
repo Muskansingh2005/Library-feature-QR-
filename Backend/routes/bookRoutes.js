@@ -1,5 +1,6 @@
 import express from "express";
 import Book from "../models/Book.js";
+import { addBook } from "../controllers/bookController.js";
 
 const router = express.Router();
 
@@ -13,15 +14,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ✅ Add new book
-router.post("/", async (req, res) => {
-  try {
-    const newBook = new Book(req.body);
-    await newBook.save();
-    res.status(201).json(newBook);
-  } catch (err) {
-    res.status(400).json({ message: "Failed to add book", error: err.message });
-  }
-});
+// ✅ Add new book (with validation and QR code generation)
+router.post("/", addBook);
 
 export default router;
