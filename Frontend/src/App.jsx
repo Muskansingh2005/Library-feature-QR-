@@ -1,6 +1,6 @@
-// [file name]: App.jsx - FIXED
+// [file name]: App.jsx - UPDATED
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom"; // Remove BrowserRouter
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import Sidebar from "./components/Sidebar";
 import LibrarianDashboard from "./pages/librarian/Dashboard";
@@ -10,10 +10,11 @@ import StudentDashboard from "./pages/student/Dashboard";
 import ScanQR from "./pages/student/ScanQR";
 import MyBooks from "./pages/student/MyBooks";
 import AddStudent from "./pages/librarian/AddStudent";
+import QRBookScanner from "./pages/student/QRBookScanner"; // NEW
+import StudentBooks from "./pages/student/StudentBooks"; // NEW
 
 function App() {
   return (
-    // Remove BrowserRouter wrapper
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
       <main className="flex-1 overflow-auto p-6">
@@ -31,6 +32,9 @@ function App() {
           <Route path="/student/dashboard" element={<StudentDashboard />} />
           <Route path="/student/scan-qr" element={<ScanQR />} />
           <Route path="/student/my-books" element={<MyBooks />} />
+          {/* NEW ROUTES */}
+          <Route path="/student/qr-scanner" element={<QRBookScanner />} />
+          <Route path="/student/books" element={<StudentBooks />} />
 
           {/* 404 Fallback */}
           <Route path="*" element={<div className="p-8 text-center">Page Not Found</div>} />

@@ -8,56 +8,60 @@ const API = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 15000,
+  timeout: 10000, // Reduced timeout
   withCredentials: false,
 });
-// ✅ Request interceptor for logging
+
+// Add request interceptor to log URLs
 API.interceptors.request.use(
   (config) => {
-    console.log(`🔄 ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(
+      `🔄 API Call: ${config.method?.toUpperCase()} ${config.baseURL}${
+        config.url
+      }`
+    );
     return config;
   },
   (error) => {
+    console.error("❌ Request Error:", error);
     return Promise.reject(error);
   }
 );
 
-// ✅ Enhanced response interceptor for global error handling
+// Enhanced response interceptor
 API.interceptors.response.use(
   (response) => {
-    console.log(`✅ ${response.status} ${response.config.url}`);
+    console.log(`✅ Success: ${response.status} ${response.config.url}`);
     return response;
   },
   (error) => {
-    const { response, request, message } = error;
+    console.error("❌ API Error Details:", {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      url: error.config?.url,
+    });
 
-    if (response) {
+    if (error.response) {
       // Server responded with error status
       const errorMessage =
-        response.data?.message ||
-        `Error: ${response.status} ${response.statusText}`;
-
-      console.error("API Error:", response.status, response.data);
-
-      // Don't show toast for 401 errors (handled by auth system)
-      if (response.status !== 401) {
-        toast.error(errorMessage);
-      }
-    } else if (request) {
+        error.response.data?.message || `Error: ${error.response.status}`;
+      toast.error(errorMessage);
+    } else if (error.request) {
       // Request made but no response received
-      console.error("No response from server:", request);
-      toast.error("Backend server is not running. Please start the server.");
+      console.error("No response received:", error.request);
+      toast.error(
+        "Backend server is not running. Please start the server on port 5000."
+      );
     } else {
-      // Something happened in setting up the request
-      console.error("Request setup error:", message);
-      toast.error("Network error occurred. Check your connection.");
+      // Something else happened
+      toast.error("Network error: " + error.message);
     }
 
     return Promise.reject(error);
   }
 );
 
-// ✅ API methods for better organization
 export const bookAPI = {
   getAll: () => API.get("/books"),
   getById: (id) => API.get(`/books/${id}`),

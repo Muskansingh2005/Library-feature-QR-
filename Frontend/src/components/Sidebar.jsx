@@ -21,8 +21,8 @@ export default function Sidebar() {
 
                 <div className="mt-6 text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Student</div>
                 <NavLink to="/student/dashboard" className={navClass}>📊 Dashboard</NavLink>
-                <NavLink to="/student/scan-qr" className={navClass}>📷 Scan QR</NavLink>
-                <NavLink to="/student/my-books" className={navClass}>📚 My Books</NavLink>
+                <NavLink to="/student/qr-scanner" className={navClass}>📷 Scan QR Book</NavLink> {/* UPDATED */}
+                <NavLink to="/student/books" className={navClass}>📚 My Books & Transactions</NavLink> {/* UPDATED */}
             </nav>
         </div>
     );

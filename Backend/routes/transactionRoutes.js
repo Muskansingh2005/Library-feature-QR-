@@ -8,6 +8,7 @@ import {
   issueBook,
   returnBook,
   getTransactions,
+  getActiveStudentIssues, // NEW
 } from "../controllers/transactionController.js";
 
 const router = express.Router();
@@ -20,5 +21,8 @@ router.post("/return", returnBook);
 
 // GET /api/transactions → List all transactions
 router.get("/", getTransactions);
+
+// NEW: GET /api/transactions/student/:studentId/active → Get active issues for student
+router.get("/student/:studentId/active", getActiveStudentIssues);
 
 export default router;

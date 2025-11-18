@@ -1,16 +1,17 @@
-// [file name]: transactionController.js - UPDATED
+// [file name]: transactionController.js - ENHANCED
 /**
  * Transaction Controller
  * ----------------------
- * Handles book issue and return operations with improved validation.
+ * Handles book issue and return operations with due dates and status tracking.
  */
 
 import Transaction from "../models/Transaction.js";
 import Book from "../models/Book.js";
 import Student from "../models/Student.js";
+import mongoose from "mongoose";
 
 /**
- * @desc Issue a book to a student
+ * @desc Issue a book to a student with due date
  * @route POST /api/transactions/issue
  * @access Public
  */
@@ -18,7 +19,7 @@ export const issueBook = async (req, res, next) => {
   try {
     const { studentId, bookId } = req.body;
 
-    // ✅ Enhanced validation
+    // Enhanced validation
     if (!studentId || !bookId) {
       return res.status(400).json({
         message: "studentId and bookId are required",
@@ -47,11 +48,11 @@ export const issueBook = async (req, res, next) => {
       return res.status(404).json({ message: "Book not found" });
     }
 
-    // Check if book is already issued to this student
+    // Check if book is already issued to this student and not returned
     const activeIssue = await Transaction.findOne({
       studentId,
       bookId,
-      type: "issue",
+      status: "active",
     });
 
     if (activeIssue) {
@@ -66,12 +67,18 @@ export const issueBook = async (req, res, next) => {
       });
     }
 
+    // Calculate due date (14 days from now)
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 14);
+
     // Create transaction and update book in parallel
     const [transaction] = await Promise.all([
       new Transaction({
         studentId,
         bookId,
         type: "issue",
+        dueDate,
+        status: "active",
       }).save(),
       Book.findByIdAndUpdate(
         bookId,
@@ -82,12 +89,14 @@ export const issueBook = async (req, res, next) => {
       ),
     ]);
 
-    const updatedBook = await Book.findById(bookId);
+    // Populate the response with student and book details
+    await transaction.populate("studentId", "name rollNo email");
+    await transaction.populate("bookId", "title author isbn");
 
     res.status(201).json({
       message: "Book issued successfully",
       transaction,
-      updatedBook,
+      dueDate: dueDate.toISOString().split("T")[0],
     });
   } catch (error) {
     console.error("Issue book error:", error);
@@ -96,7 +105,7 @@ export const issueBook = async (req, res, next) => {
 };
 
 /**
- * @desc Return a book
+ * @desc Return a book and update status
  * @route POST /api/transactions/return
  * @access Public
  */
@@ -131,25 +140,27 @@ export const returnBook = async (req, res, next) => {
       });
     }
 
-    // Check if book is actually issued to this student
+    // Check if book is actually issued to this student and not returned
     const activeIssue = await Transaction.findOne({
       studentId,
       bookId,
-      type: "issue",
+      status: "active",
     });
 
     if (!activeIssue) {
       return res.status(400).json({
-        message: "This book is not issued to the student",
+        message: "No active issue found for this book and student",
       });
     }
 
     // Create return transaction and update book
-    const [transaction] = await Promise.all([
+    const [returnTransaction] = await Promise.all([
       new Transaction({
         studentId,
         bookId,
         type: "return",
+        returnDate: new Date(),
+        status: "returned",
       }).save(),
       Book.findByIdAndUpdate(
         bookId,
@@ -158,14 +169,19 @@ export const returnBook = async (req, res, next) => {
         },
         { new: true }
       ),
+      // Update the original issue transaction status
+      Transaction.findByIdAndUpdate(activeIssue._id, {
+        status: "returned",
+        returnDate: new Date(),
+      }),
     ]);
 
-    const updatedBook = await Book.findById(bookId);
+    await returnTransaction.populate("studentId", "name rollNo email");
+    await returnTransaction.populate("bookId", "title author isbn");
 
     res.status(201).json({
       message: "Book returned successfully",
-      transaction,
-      updatedBook,
+      transaction: returnTransaction,
     });
   } catch (error) {
     console.error("Return book error:", error);
@@ -174,22 +190,24 @@ export const returnBook = async (req, res, next) => {
 };
 
 /**
- * @desc Get all transactions with pagination
+ * @desc Get all transactions with enhanced filtering
  * @route GET /api/transactions
  * @access Public
  */
 export const getTransactions = async (req, res, next) => {
   try {
-    const { page = 1, limit = 50, studentId, bookId } = req.query;
+    const { page = 1, limit = 50, studentId, bookId, type, status } = req.query;
 
     const filter = {};
     if (studentId) filter.studentId = studentId;
     if (bookId) filter.bookId = bookId;
+    if (type) filter.type = type;
+    if (status) filter.status = status;
 
     const transactions = await Transaction.find(filter)
       .populate("studentId", "name rollNo email")
-      .populate("bookId", "title author isbn")
-      .sort({ date: -1 })
+      .populate("bookId", "title author isbn coverImage")
+      .sort({ issueDate: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
@@ -203,6 +221,37 @@ export const getTransactions = async (req, res, next) => {
     });
   } catch (error) {
     console.error("Get transactions error:", error);
+    next(error);
+  }
+};
+
+/**
+ * @desc Get active issues for a student
+ * @route GET /api/transactions/student/:studentId/active
+ * @access Public
+ */
+export const getActiveStudentIssues = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ message: "Invalid student ID" });
+    }
+
+    const activeIssues = await Transaction.find({
+      studentId,
+      status: "active",
+      type: "issue",
+    })
+      .populate("bookId", "title author isbn coverImage")
+      .sort({ issueDate: -1 });
+
+    res.json({
+      activeIssues,
+      count: activeIssues.length,
+    });
+  } catch (error) {
+    console.error("Get active issues error:", error);
     next(error);
   }
 };

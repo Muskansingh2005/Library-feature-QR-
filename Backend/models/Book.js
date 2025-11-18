@@ -14,7 +14,8 @@ const BookSchema = new mongoose.Schema(
     description: { type: String },
     totalCopies: { type: Number, required: true, default: 1 },
     availableCopies: { type: Number, required: true, default: 1 },
-    qrData: { type: String }, // for QR code info (will be generated later)
+    qrData: { type: String },
+    coverImage: { type: String, default: "" }, // NEW: For book cover images
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
